@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>時代周邊雲端庫存系統｜Supabase 版</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; font-family: system-ui, 'Segoe UI', sans-serif; }
+        body { background: #f0ebe0; margin: 0; padding: 16px; }
+        .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+        .tab-btn { background: #e0d6c8; border: none; padding: 10px 24px; border-radius: 40px; font-weight: bold; cursor: pointer; }
+        .tab-btn.active { background: #1e1a2f; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .main-layout { display: flex; gap: 20px; flex-wrap: wrap; }
+        .left-panel { flex: 1.2; min-width: 280px; }
+        .right-panel { flex: 2.5; min-width: 400px; }
+        .card { background: white; border-radius: 28px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        h2 { margin-top: 0; font-size: 1.3rem; border-left: 5px solid #ff8c42; padding-left: 12px; }
+        h3 { font-size: 1rem; margin: 16px 0 8px 0; }
+        .selector-group { margin-bottom: 16px; }
+        .selector-group label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 5px; }
+        select, input, button { padding: 10px 12px; border-radius: 40px; border: 1px solid #ddd; font-size: 0.9rem; }
+        select { width: 100%; background: white; }
+        button { background: #ff8c42; border: none; font-weight: bold; cursor: pointer; }
+        button.secondary { background: #e0d6c8; color: #1e1a2f; }
+        .price-row { display: flex; gap: 16px; flex-wrap: wrap; margin: 15px 0; }
+        .price-box { flex: 1; background: #fef5e8; border-radius: 20px; padding: 12px; }
+        .price-value { font-size: 1.5rem; font-weight: bold; color: #c96f0e; }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .btn-group button { background: #efe5d8; padding: 5px 10px; font-size: 0.8rem; }
+        .quick-price { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+        .quick-price button { background: #e9e2d5; font-size: 0.75rem; padding: 5px 10px; }
+        .add-btn { background: #1e1a2f; color: white; width: 100%; padding: 12px; margin-top: 16px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+        th, td { padding: 8px 4px; border-bottom: 1px solid #eee; text-align: left; }
+        .barcode-label { display: inline-block; width: 32%; margin: 8px 0; text-align: center; border: 1px solid #ddd; padding: 8px; border-radius: 8px; }
+        .scanner-box { border: 2px dashed #ff8c42; padding: 20px; text-align: center; border-radius: 24px; }
+        #qr-reader, #seller-scanner { width: 100%; max-width: 400px; margin: 0 auto; }
+        .flex-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+        .loading { text-align: center; padding: 40px; color: #666; }
+        @media print { .no-print { display: none; } }
+    </style>
+</head>
+<body>
+
+<div class="tabs no-print">
+    <button class="tab-btn active" data-tab="main">📦 庫存管理</button>
+    <button class="tab-btn" data-tab="barcode">🏷️ 條碼列印</button>
+    <button class="tab-btn" data-tab="scan">📷 掃描出貨/入庫</button>
+    <button class="tab-btn" data-tab="seller">👥 小販模式</button>
+</div>
+
+<!-- 主分頁 -->
+<div id="main" class="tab-content active">
+    <div class="main-layout">
+        <div class="left-panel">
+            <div class="card">
+                <h2>✨ 點選快速新增商品</h2>
+                <div class="selector-group">
+                    <label>📌 世代</label>
+                    <select id="genSelect"></select>
+                </div>
+                <div class="selector-group">
+                    <label>🎁 周邊類別</label>
+                    <select id="categorySelect"></select>
+                </div>
+                <div class="selector-group">
+                    <label>🖼️ 圖樣款式</label>
+                    <select id="styleSelect"></select>
+                </div>
+                <h3>💰 成本與售價</h3>
+                <div class="price-row">
+                    <div class="price-box">
+                        <label>成本</label>
+                        <div><span class="price-value" id="costValue">50</span></div>
+                        <div class="btn-group">
+                            <button data-target="cost" data-delta="-5">-5</button>
+                            <button data-target="cost" data-delta="-1">-1</button>
+                            <button data-target="cost" data-delta="+1">+1</button>
+                            <button data-target="cost" data-delta="+5">+5</button>
+                        </div>
+                    </div>
+                    <div class="price-box">
+                        <label>售價</label>
+                        <div><span class="price-value" id="sellValue">100</span></div>
+                        <div class="btn-group">
+                            <button data-target="sell" data-delta="-5">-5</button>
+                            <button data-target="sell" data-delta="-1">-1</button>
+                            <button data-target="sell" data-delta="+1">+1</button>
+                            <button data-target="sell" data-delta="+5">+5</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="quick-price">
+                    <button data-cost="50" data-sell="100">50/100</button>
+                    <button data-cost="100" data-sell="180">100/180</button>
+                    <button data-cost="150" data-sell="250">150/250</button>
+                    <button data-cost="200" data-sell="350">200/350</button>
+                    <button data-cost="300" data-sell="500">300/500</button>
+                    <button data-cost="500" data-sell="800">500/800</button>
+                </div>
+                <button class="add-btn" id="addProductBtn">➕ 新增商品（自動產生條碼）</button>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; flex-wrap:wrap;">
+                    <h2>📋 商品庫存總表</h2>
+                    <div>
+                        <button id="refreshBtn" class="secondary">🔄 重新整理</button>
+                    </div>
+                </div>
+                <div id="statsArea" style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;"></div>
+                <div style="overflow-x:auto;">
+                    <table id="inventoryTable">
+                        <thead><tr><th>條碼</th><th>世代｜商品</th><th>成本</th><th>售價</th><th>庫存</th><th>操作</th></tr></thead>
+                        <tbody id="tableBody"><tr><td colspan="6" class="loading">載入中...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card">
+                <h2>📤 出貨給小販</h2>
+                <div class="flex-row">
+                    <select id="shipSelect" style="flex:2"></select>
+                    <input type="number" id="shipQty" value="1" min="1" style="flex:1">
+                    <input type="text" id="sellerName" placeholder="小販名稱" style="flex:1">
+                    <button id="shipBtn">✅ 出貨</button>
+                </div>
+                <h2>📥 進貨補貨</h2>
+                <div class="flex-row">
+                    <select id="restockSelect" style="flex:2"></select>
+                    <input type="number" id="restockQty" placeholder="數量" style="flex:1">
+                    <button id="restockBtn">➕ 進貨</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 條碼列印分頁 -->
+<div id="barcode" class="tab-content">
+    <div class="card">
+        <h2>🖨️ 條碼列印</h2>
+        <p>勾選要列印的商品條碼貼紙</p>
+        <div id="barcodeSelectList" style="max-height:400px; overflow-y:auto; border:1px solid #eee; padding:12px; border-radius:16px;"></div>
+        <button id="printBarcodeBtn" style="margin-top:16px;">🖨️ 列印選取的條碼</button>
+    </div>
+</div>
+
+<!-- 掃描分頁 -->
+<div id="scan" class="tab-content">
+    <div class="card">
+        <h2>📷 掃描條碼</h2>
+        <div class="scanner-box">
+            <div id="qr-reader"></div>
+            <p>⬆️ 手機請允許相機，電腦可用掃描槍</p>
+            <div class="flex-row" style="justify-content:center; margin-top:16px;">
+                <input type="text" id="manualBarcode" placeholder="手動輸入條碼">
+                <select id="scanAction">
+                    <option value="out">📤 出貨扣庫存</option>
+                    <option value="in">📥 入庫加庫存</option>
+                </select>
+                <button id="manualSubmitBtn">執行</button>
+            </div>
+        </div>
+        <h3>📜 最近掃描記錄</h3>
+        <div id="scanLog" style="max-height:200px; overflow-y:auto;"></div>
+    </div>
+</div>
+
+<!-- 小販模式分頁 -->
+<div id="seller" class="tab-content">
+    <div class="card">
+        <h2>👥 小販模式（成本隱藏）</h2>
+        <div class="scanner-box">
+            <div id="seller-scanner"></div>
+            <div class="flex-row" style="justify-content:center; margin-top:16px;">
+                <input type="text" id="sellerManualBarcode" placeholder="掃描或輸入條碼">
+                <button id="sellerScanBtn">記錄銷售</button>
+            </div>
+        </div>
+        <h3>📝 銷售記錄</h3>
+        <div id="sellerSalesList"></div>
+        <button id="exportSalesBtn" class="secondary">📎 匯出銷售記錄CSV</button>
+    </div>
+</div>
+
+<script>
+    // ==================== 請貼上你的 Supabase 資訊 ====================
+    const SUPABASE_URL = 'https://qzuzazwlbixlkiqvwvey.supabase.co';  // 👈 你的專案網址
+    const SUPABASE_ANON_KEY = 'sb_publishable_zBmyIddve6Edn62NoRdCzQ_Jh-Nc1SI';  // 👈 你的公開金鑰
+    // =================================================================
+
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let products = [];
+    let scanHistory = [];
+    let sellerSales = [];
+
+    // 世代與分類資料
+    const GENERATIONS = ["一代 TFBOYS", "二代 時代少年團", "三代 TOP登陸少年", "四代 TF家族", "五代 TF家族"];
+    const CATEGORIES = ["小卡", "拍立得", "明信片", "透卡", "閃卡/特殊卡", "棉花娃娃", "掛件/鑰匙扣", "寫真冊/PB", "海報", "徽章", "卡冊", "應援棒", "衣服", "桌曆", "其他"];
+    
+    const MEMBERS = {
+        "一代 TFBOYS": ["王俊凱", "王源", "易烊千璽"],
+        "二代 時代少年團": ["馬嘉祺", "丁程鑫", "宋亞軒", "劉耀文", "張真源", "嚴浩翔", "賀峻霖"],
+        "三代 TOP登陸少年": ["朱志鑫", "張澤禹", "張極", "左航", "蘇新皓", "余宇涵"],
+        "四代 TF家族": ["官俊臣", "汪浚熙", "張桂源", "張函瑞", "陳奕恒", "王浩", "楊博文"],
+        "五代 TF家族": ["智恩涵", "朱映宸", "呂政熙", "陳燊", "佟弋", "聶瑋辰"]
+    };
+
+    function getStylesByGenAndCat(gen, cat) {
+        let members = MEMBERS[gen] || ["團體款"];
+        let styles = [...members.map(m => m + " 單人")];
+        if(members.length >= 2) styles.push(members[0] + "×" + members[1] + " 雙人");
+        styles.push(gen.replace(" ","") + " 團體卡");
+        styles.push("隱藏版", "限量閃卡");
+        if(cat.includes("娃娃")) styles.push("棉花娃娃", "動物掛件");
+        return [...new Set(styles)].slice(0, 12);
+    }
+
+    function generateBarcode() { return 'TNT' + Date.now() + Math.floor(Math.random() * 10000); }
+
+    // 從 Supabase 載入資料
+    async function loadAllData() {
+        const [productsRes, scanRes, salesRes] = await Promise.all([
+            supabase.from('products').select('*').order('id'),
+            supabase.from('scan_logs').select('*').order('created_at', { ascending: false }).limit(50),
+            supabase.from('seller_sales').select('*').order('created_at', { ascending: false }).limit(50)
+        ]);
+        if (productsRes.error) console.error(productsRes.error);
+        if (scanRes.error) console.error(scanRes.error);
+        if (salesRes.error) console.error(salesRes.error);
+        
+        products = productsRes.data || [];
+        scanHistory = scanRes.data || [];
+        sellerSales = salesRes.data || [];
+        renderAll();
+    }
+
+    // 新增商品
+    async function addProduct(generation, category, style, cost, sellPrice) {
+        const barcode = generateBarcode();
+        const name = `${category}_${style}`;
+        const { error } = await supabase.from('products').insert([{
+            barcode, generation, name, category, style,
+            cost: parseInt(cost), sell_price: parseInt(sellPrice), stock: 0
+        }]);
+        if (error) { alert('新增失敗：' + error.message); return; }
+        loadAllData();
+        alert('✅ 商品已新增，條碼：' + barcode);
+    }
+
+    // 出貨
+    async function shipProduct(barcode, quantity, seller) {
+        const product = products.find(p => p.barcode === barcode);
+        if (!product) { alert('找不到商品'); return; }
+        if (product.stock < quantity) { alert(`庫存不足！只剩 ${product.stock} 件`); return; }
+        
+        const newStock = product.stock - quantity;
+        const { error: updateError } = await supabase.from('products').update({ stock: newStock }).eq('barcode', barcode);
+        if (updateError) { alert('出貨失敗：' + updateError.message); return; }
+        
+        await supabase.from('scan_logs').insert([{ barcode, action: '出貨', quantity, seller: seller || '未記錄' }]);
+        loadAllData();
+        alert(`✅ 出貨 ${quantity} 件給 ${seller || '未記錄'} 完成`);
+    }
+
+    // 入庫
+    async function restockProduct(barcode, quantity) {
+        const product = products.find(p => p.barcode === barcode);
+        if (!product) { alert('找不到商品'); return; }
+        
+        const newStock = product.stock + quantity;
+        const { error: updateError } = await supabase.from('products').update({ stock: newStock }).eq('barcode', barcode);
+        if (updateError) { alert('入庫失敗：' + updateError.message); return; }
+        
+        await supabase.from('scan_logs').insert([{ barcode, action: '入庫', quantity }]);
+        loadAllData();
+        alert(`✅ 入庫 ${quantity} 件完成`);
+    }
+
+    // 小販記錄銷售
+    async function recordSale(barcode, seller) {
+        const product = products.find(p => p.barcode === barcode);
+        if (!product) { alert('找不到商品'); return; }
+        const { error } = await supabase.from('seller_sales').insert([{ barcode, seller }]);
+        if (error) { alert('記錄失敗：' + error.message); return; }
+        loadAllData();
+        alert(`📝 已記錄銷售：${product.name} 售價 ¥${product.sell_price}`);
+    }
+
+    // 渲染 UI
+    function renderAll() {
+        renderInventoryTable();
+        renderStats();
+        renderSelects();
+        renderBarcodeList();
+        renderScanLog();
+        renderSellerSales();
+    }
+
+    function renderInventoryTable() {
+        const tbody = document.getElementById('tableBody');
+        if (!tbody) return;
+        if (products.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="loading">暫無商品，請從左側新增</td></tr>';
+            return;
+        }
+        tbody.innerHTML = products.map(p => `
+            <tr>
+                <td><code>${p.barcode}</code></td>
+                <td>${p.generation}｜${p.name}</td>
+                <td>¥${p.cost}</td>
+                <td>¥${p.sell_price}</td>
+                <td><b>${p.stock}</b></td>
+                <td><button class="secondary" onclick="window.deleteProductFromDB('${p.barcode}')">刪除</button></td>
+            </tr>
+        `).join('');
+    }
+
+    window.deleteProductFromDB = async (barcode) => {
+        if (!confirm('確定刪除此商品？')) return;
+        const { error } = await supabase.from('products').delete().eq('barcode', barcode);
+        if (error) { alert('刪除失敗：' + error.message); return; }
+        loadAllData();
+    };
+
+    function renderStats() {
+        const totalStock = products.reduce((s, p) => s + p.stock, 0);
+        const totalCost = products.reduce((s, p) => s + p.stock * p.cost, 0);
+        const totalPotential = products.reduce((s, p) => s + p.stock * (p.sell_price - p.cost), 0);
+        document.getElementById('statsArea').innerHTML = `
+            <div style="background:#eee;padding:6px 14px;border-radius:40px;">📦 總庫存:${totalStock}</div>
+            <div style="background:#eee;padding:6px 14px;border-radius:40px;">💰 成本總額:¥${totalCost}</div>
+            <div style="background:#eee;padding:6px 14px;border-radius:40px;">📈 預期利潤:¥${totalPotential}</div>
+            <div style="background:#eee;padding:6px 14px;border-radius:40px;">🏷️ 商品種類:${products.length}</div>
+        `;
+    }
+
+    function renderSelects() {
+        const shipSel = document.getElementById('shipSelect');
+        const restockSel = document.getElementById('restockSelect');
+        if (shipSel && products.length) {
+            const opts = products.map(p => `<option value="${p.barcode}">${p.generation}｜${p.name} (庫存${p.stock})</option>`);
+            shipSel.innerHTML = opts.join('');
+            restockSel.innerHTML = opts.join('');
+        } else if (shipSel) {
+            shipSel.innerHTML = '<option>暫無商品</option>';
+            restockSel.innerHTML = '<option>暫無商品</option>';
+        }
+    }
+
+    function renderBarcodeList() {
+        const container = document.getElementById('barcodeSelectList');
+        if (!container) return;
+        if (products.length === 0) {
+            container.innerHTML = '<p>暫無商品，請先新增</p>';
+            return;
+        }
+        container.innerHTML = products.map(p => `
+            <label style="display:block; margin:10px 0; padding:8px; background:#f9f5ee; border-radius:12px;">
+                <input type="checkbox" class="barcode-chk" value="${p.barcode}"> 
+                <strong>${p.name}</strong> <span style="font-family:monospace;">${p.barcode}</span>
+                <div id="barcode-${p.barcode.replace(/\W/g, '')}" style="margin-top:5px;"></div>
+            </label>
+        `).join('');
+        products.forEach(p => {
+            const div = document.getElementById(`barcode-${p.barcode.replace(/\W/g, '')}`);
+            if (div) JsBarcode(div, p.barcode, { format: "CODE128", width: 1.5, height: 35, displayValue: true });
+        });
+    }
+
+    function printBarcodes() {
+        const selected = Array.from(document.querySelectorAll('.barcode-chk:checked')).map(cb => cb.value);
+        const toPrint = products.filter(p => selected.includes(p.barcode));
+        if (toPrint.length === 0) { alert('請先勾選要列印的商品'); return; }
+        let html = '<html><head><title>條碼貼紙</title><style>.label{display:inline-block;width:32%;margin:8px;text-align:center;border:1px solid #ccc;padding:8px;border-radius:8px;}</style></head><body>';
+        toPrint.forEach(p => {
+            html += `<div class="label"><div>${p.name}</div><svg id="print-svg-${p.barcode.replace(/\W/g, '')}"></svg><div>${p.barcode}</div></div>`;
+        });
+        html += '</body></html>';
+        const win = window.open('', '_blank');
+        win.document.write(html);
+        win.document.close();
+        toPrint.forEach(p => {
+            JsBarcode(win.document.getElementById(`print-svg-${p.barcode.replace(/\W/g, '')}`), p.barcode, { format: "CODE128", width: 2, height: 45 });
+        });
+        win.print();
+    }
+
+    function renderScanLog() {
+        const div = document.getElementById('scanLog');
+        if (div) {
+            if (scanHistory.length === 0) { div.innerHTML = '<p>暫無掃描記錄</p>'; return; }
+            div.innerHTML = scanHistory.map(h => `<div>[${new Date(h.created_at).toLocaleString()}] ${h.action}: ${h.quantity || 1}件 ${h.seller ? '('+h.seller+')' : ''}</div>`).join('');
+        }
+    }
+
+    function renderSellerSales() {
+        const div = document.getElementById('sellerSalesList');
+        if (div) {
+            if (sellerSales.length === 0) { div.innerHTML = '<p>暫無銷售記錄</p>'; return; }
+            div.innerHTML = sellerSales.map(s => `<div>[${new Date(s.created_at).toLocaleString()}] 已銷售 (${s.seller})</div>`).join('');
+        }
+    }
+
+    function exportSalesCSV() {
+        let csv = "時間,條碼,小販\n" + sellerSales.map(s => `${s.created_at},${s.barcode},${s.seller}`).join('\n');
+        const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = '銷售記錄.csv'; a.click();
+    }
+
+    // 掃描器
+    let scanner1, scanner2;
+    function startScanners() {
+        if (scanner1) try { scanner1.stop(); } catch(e) {}
+        if (scanner2) try { scanner2.stop(); } catch(e) {}
+        scanner1 = new Html5Qrcode("qr-reader");
+        scanner2 = new Html5Qrcode("seller-scanner");
+        const config = { fps: 10, qrbox: { width: 200, height: 150 } };
+        scanner1.start({ facingMode: "environment" }, config, (text) => {
+            const action = document.getElementById('scanAction').value;
+            if (action === 'out') shipProduct(text, 1, '掃描出貨');
+            else restockProduct(text, 1);
+        }, err => console.log);
+        scanner2.start({ facingMode: "environment" }, config, (text) => {
+            const seller = prompt('輸入小販名稱', '小販');
+            if (seller) recordSale(text, seller);
+        }, err => console.log);
+    }
+
+    // 初始化頁面
+    window.onload = () => {
+        loadAllData();
+
+        // 填入下拉選單
+        const genSel = document.getElementById('genSelect');
+        const catSel = document.getElementById('categorySelect');
+        const styleSel = document.getElementById('styleSelect');
+        GENERATIONS.forEach(g => { let opt = document.createElement('option'); opt.value = g; opt.text = g; genSel.appendChild(opt); });
+        CATEGORIES.forEach(c => { let opt = document.createElement('option'); opt.value = c; opt.text = c; catSel.appendChild(opt); });
+        function updateStyleOptions() {
+            const gen = genSel.value, cat = catSel.value;
+            const styles = getStylesByGenAndCat(gen, cat);
+            styleSel.innerHTML = styles.map(s => `<option value="${s}">${s}</option>`).join('');
+        }
+        genSel.onchange = updateStyleOptions;
+        catSel.onchange = updateStyleOptions;
+        updateStyleOptions();
+
+        // 價格控制
+        let currentCost = 50, currentSell = 100;
+        document.querySelectorAll('.btn-group button').forEach(btn => {
+            btn.onclick = () => {
+                const target = btn.getAttribute('data-target');
+                const delta = parseInt(btn.getAttribute('data-delta'));
+                if (target === 'cost') currentCost = Math.max(0, currentCost + delta);
+                else currentSell = Math.max(0, currentSell + delta);
+                document.getElementById('costValue').innerText = currentCost;
+                document.getElementById('sellValue').innerText = currentSell;
+            };
+        });
+        document.querySelectorAll('.quick-price button').forEach(btn => {
+            btn.onclick = () => {
+                currentCost = parseInt(btn.getAttribute('data-cost'));
+                currentSell = parseInt(btn.getAttribute('data-sell'));
+                document.getElementById('costValue').innerText = currentCost;
+                document.getElementById('sellValue').innerText = currentSell;
+            };
+        });
+
+        document.getElementById('addProductBtn').onclick = () => {
+            addProduct(genSel.value, catSel.value, styleSel.value, currentCost, currentSell);
+        };
+        document.getElementById('shipBtn').onclick = () => {
+            const barcode = document.getElementById('shipSelect').value;
+            const qty = parseInt(document.getElementById('shipQty').value);
+            const seller = document.getElementById('sellerName').value;
+            if (barcode && qty > 0) shipProduct(barcode, qty, seller);
+            else alert('請選擇商品並輸入數量');
+        };
+        document.getElementById('restockBtn').onclick = () => {
+            const barcode = document.getElementById('restockSelect').value;
+            const qty = parseInt(document.getElementById('restockQty').value);
+            if (barcode && qty > 0) restockProduct(barcode, qty);
+            else alert('請選擇商品並輸入數量');
+        };
+        document.getElementById('refreshBtn').onclick = () => loadAllData();
+        document.getElementById('printBarcodeBtn').onclick = printBarcodes;
+        document.getElementById('manualSubmitBtn').onclick = () => {
+            const code = document.getElementById('manualBarcode').value;
+            const action = document.getElementById('scanAction').value;
+            if (code) {
+                if (action === 'out') shipProduct(code, 1, '手動');
+                else restockProduct(code, 1);
+            }
+        };
+        document.getElementById('sellerScanBtn').onclick = () => {
+            const code = document.getElementById('sellerManualBarcode').value;
+            const seller = prompt('小販名稱', '小販');
+            if (code && seller) recordSale(code, seller);
+        };
+        document.getElementById('exportSalesBtn').onclick = exportSalesCSV;
+
+        // Tab 切換
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.getAttribute('data-tab')).classList.add('active');
+                if (btn.getAttribute('data-tab') === 'scan' || btn.getAttribute('data-tab') === 'seller') {
+                    setTimeout(startScanners, 200);
+                }
+            };
+        });
+        startScanners();
+    };
+</script>
+</body>
+</html>
